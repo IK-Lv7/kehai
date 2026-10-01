@@ -1,0 +1,116 @@
+name: TestFlight
+
+# リポジトリのオーナーが Actions 画面から手動で実行したときだけ、TestFlight にアップロードする。
+# バージョン (例: 1.2.0) は実行時の引数で指定する。ビルド番号は日時から自動で決まる。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "アプリのバージョン (例: 1.2.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+env:
+  # xcodegen が project.yml から生成する。
+  PROJECT: Kehai.xcodeproj
+  SCHEME: Kehai
+  MARKETING_VERSION: ${{ inputs.version }}
+  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+  ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+  ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+
+jobs:
+  testflight:
+    # オーナー本人が実行したときだけ動く。
+    if: github.triggering_actor == github.repository_owner
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 入力とシークレットを確認
+        run: |
+          if ! [[ "$MARKETING_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+            echo "::error::バージョン '$MARKETING_VERSION' は 1.2 または 1.2.0 の形式で指定してください"
+            exit 1
+          fi
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            if [ -z "${!name}" ]; then
+              echo "::error::シークレット $name が設定されていません"
+              exit 1
+            fi
+          done
+          # 日時 (UTC) を使う。実行し直しても、常に前回より大きくなる。
+          echo "BUILD_NUMBER=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_ENV"
+
+      - name: Xcode 26 以降を選択
+        # App Store Connect は Xcode 26 以降 (iOS 26 SDK 以降) でビルドしたアプリだけを受け付ける。
+        run: |
+          latest=$(ls -d /Applications/Xcode_2[6-9]*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$latest" ]; then
+            echo "::error::Xcode 26 以降がこのランナーにありません"
+            exit 1
+          fi
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: Xcode プロジェクトを生成
+        # Mac を使わないので、プロジェクトは project.yml から毎回生成する (*.xcodeproj はコミットしない)。
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: App Store Connect API キーを配置
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: アーカイブ
+        # 署名は自動署名。アプリとウィジェットの証明書・プロファイル (App Group 含む) は、
+        # API キーを使って Apple 側で自動的に作られる。
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Kehai.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+
+      - name: TestFlight にアップロード
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Kehai.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: API キーを削除
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
