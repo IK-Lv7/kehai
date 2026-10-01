@@ -2,30 +2,12 @@ import AuthenticationServices
 import CryptoKit
 import Supabase
 import SwiftUI
-
-struct PartnerState: Decodable, Identifiable {
-    let partnerId: UUID
-    let displayName: String
-    let color: String
-    let updatedAt: Date
-
-    var id: UUID { partnerId }
-
-    enum CodingKeys: String, CodingKey {
-        case partnerId = "partner_id"
-        case displayName = "display_name"
-        case color
-        case updatedAt = "updated_at"
-    }
-}
+import WidgetKit
 
 @MainActor
 @Observable
 final class SessionStore {
-    let client = SupabaseClient(
-        supabaseURL: SupabaseConfig.url,
-        supabaseKey: SupabaseConfig.publishableKey
-    )
+    let client = makeSupabaseClient()
 
     var isLoading = true
     var isSignedIn = false
@@ -77,13 +59,16 @@ final class SessionStore {
         isSignedIn = false
         partners = []
         inviteCode = nil
+        PartnerCache.clear()
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: ペアリング
 
     func refreshPartners() async {
         do {
-            partners = try await client.rpc("get_partner_states").execute().value
+            partners = try await PartnerFetcher.fetch()
+            WidgetCenter.shared.reloadAllTimelines()
         } catch {
             message = "なかまの取得に失敗しました: \(error.localizedDescription)"
         }

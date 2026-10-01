@@ -41,6 +41,8 @@ targets:
     type: app-extension
     platform: iOS
     sources: [KehaiWidget, Shared]
+    dependencies:
+      - package: Supabase
     entitlements:
       path: KehaiWidget/KehaiWidget.entitlements
       properties:
