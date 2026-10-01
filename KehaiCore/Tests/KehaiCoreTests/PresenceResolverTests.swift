@@ -15,6 +15,12 @@ final class PresenceResolverTests: XCTestCase {
         return calendar.date(from: components)!
     }
 
+    /// UTC の、ある日の指定した時刻 (整数で計算する)。
+    private func utc(hour: Int) -> Date {
+        let dayStart = (1_790_960_400 / 86_400) * 86_400
+        return Date(timeIntervalSince1970: TimeInterval(dayStart + hour * 3600))
+    }
+
     private func input(
         charging: Bool = false,
         battery: Int? = 80,
@@ -138,7 +144,7 @@ final class PresenceResolverTests: XCTestCase {
     func testUsesPartnersLocalTimeNotViewers() {
         // 見ている側の時刻に関係なく、相手の UTC との差で換算する。
         // UTC 17:00 は、日本 (UTC+9) では 02:00 で、就寝時間帯。ニューヨーク (UTC-4) では 13:00 で、時間帯の外。
-        let utc1700 = Date(timeIntervalSince1970: 1_790_960_400 - (1_790_960_400 % 86_400) + 17 * 3600)
+        let utc1700 = utc(hour: 17)
         XCTAssertTrue(
             PresenceResolver.isInSleepWindow(now: utc1700, startMinutes: 23 * 60, endMinutes: 7 * 60, utcOffsetMinutes: 540)
         )
@@ -149,7 +155,7 @@ final class PresenceResolverTests: XCTestCase {
 
     func testNegativeOffsetWrapsAroundMidnight() {
         // UTC 03:00 は、UTC-5 では前日の 22:00。
-        let utc0300 = Date(timeIntervalSince1970: 1_790_960_400 - (1_790_960_400 % 86_400) + 3 * 3600)
+        let utc0300 = utc(hour: 3)
         XCTAssertTrue(
             PresenceResolver.isInSleepWindow(now: utc0300, startMinutes: 21 * 60, endMinutes: 23 * 60, utcOffsetMinutes: -300)
         )
