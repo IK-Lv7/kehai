@@ -1,4 +1,5 @@
 import AppIntents
+import KehaiCore
 import SwiftUI
 import WidgetKit
 
@@ -52,6 +53,15 @@ struct PartnerCell: View {
     let tapStamp: Double
     /// 送った直後だけ、トントンの絵 (手を振る・きらっ) にする。
     let isTapping: Bool
+    let now: Date
+
+    private var presence: PresenceState { partner.presence(now: now) }
+
+    /// ドット絵の絵は、起きてる・寝てる・トントンの3つ。
+    private var spriteState: CharacterState {
+        if isTapping { return .tap }
+        return presence == .sleeping ? .sleep : .awake
+    }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -60,17 +70,15 @@ struct PartnerCell: View {
                     style: partner.characterStyle,
                     creature: partner.creature,
                     color: partner.color,
-                    state: isTapping ? .tap : .awake
+                    state: spriteState
                 )
-                    // 送信に成功すると tapStamp が変わり、作り直されて「ぽん」と現れる。
-                    .id(tapStamp)
-                    .transition(.scale(scale: 0.6).combined(with: .opacity))
-                    // 送信している間は、少し暗くなる。
-                    .invalidatableContent()
             }
             .buttonStyle(.plain)
             Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
                 .font(.caption)
+                .lineLimit(1)
+            Text(presence.label)
+                .font(.caption2)
                 .lineLimit(1)
             (Text(partner.updatedAt, style: .relative) + Text("前"))
                 .font(.caption2)
@@ -95,7 +103,8 @@ struct KehaiWidgetView: View {
                 PartnerCell(
                     partner: entry.partners[0],
                     tapStamp: entry.tapStamps[entry.partners[0].partnerId] ?? 0,
-                    isTapping: entry.isTapping(entry.partners[0].partnerId)
+                    isTapping: entry.isTapping(entry.partners[0].partnerId),
+                    now: entry.date
                 )
             } else {
                 HStack(spacing: 8) {
@@ -103,7 +112,8 @@ struct KehaiWidgetView: View {
                         PartnerCell(
                             partner: partner,
                             tapStamp: entry.tapStamps[partner.partnerId] ?? 0,
-                            isTapping: entry.isTapping(partner.partnerId)
+                            isTapping: entry.isTapping(partner.partnerId),
+                            now: entry.date
                         )
                     }
                 }

@@ -1,0 +1,58 @@
+name: CI
+
+# push と PR のたびに、判定ロジックのテストと、アプリのビルドを確認する。
+# TestFlight には上げない (配布は testflight.yaml を手動で実行する)。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    # 画面に依存しない判定ロジックは、Linux で素早くテストする。
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: テスト
+        run: swift test --package-path KehaiCore
+
+  build:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode 26 以降を選択
+        run: |
+          latest=$(ls -d /Applications/Xcode_2[6-9]*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$latest" ]; then
+            echo "::error::Xcode 26 以降がこのランナーにありません"
+            exit 1
+          fi
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: Xcode プロジェクトを生成
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: ビルド (署名なし・シミュレータ向け)
+        run: |
+          xcodebuild build \
+            -project Kehai.xcodeproj \
+            -scheme Kehai \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO

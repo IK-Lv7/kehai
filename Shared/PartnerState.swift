@@ -1,4 +1,5 @@
 import Foundation
+import KehaiCore
 
 struct PartnerState: Codable, Identifiable {
     let partnerId: UUID
@@ -6,9 +7,32 @@ struct PartnerState: Codable, Identifiable {
     let color: String
     let characterStyle: String
     let creature: String
+    let isCharging: Bool
+    let batteryLevel: Int?
+    let isWorking: Bool
+    /// DB の time 型 ("23:00:00")。
+    let sleepStart: String
+    let sleepEnd: String
+    let utcOffsetMinutes: Int
     let updatedAt: Date
 
     var id: UUID { partnerId }
+
+    /// 今の状態。「寝てる」は保存せず、ここで推測する。
+    func presence(now: Date) -> PresenceState {
+        PresenceResolver.resolve(
+            PresenceInput(
+                isCharging: isCharging,
+                batteryLevel: batteryLevel,
+                isWorking: isWorking,
+                sleepStartMinutes: PresenceResolver.minutes(fromTime: sleepStart) ?? 23 * 60,
+                sleepEndMinutes: PresenceResolver.minutes(fromTime: sleepEnd) ?? 7 * 60,
+                utcOffsetMinutes: utcOffsetMinutes,
+                updatedAt: updatedAt
+            ),
+            now: now
+        )
+    }
 
     enum CodingKeys: String, CodingKey {
         case partnerId = "partner_id"
@@ -16,6 +40,12 @@ struct PartnerState: Codable, Identifiable {
         case color
         case characterStyle = "character_style"
         case creature
+        case isCharging = "is_charging"
+        case batteryLevel = "battery_level"
+        case isWorking = "is_working"
+        case sleepStart = "sleep_start"
+        case sleepEnd = "sleep_end"
+        case utcOffsetMinutes = "utc_offset_minutes"
         case updatedAt = "updated_at"
     }
 }

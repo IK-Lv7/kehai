@@ -2,6 +2,7 @@ import AuthenticationServices
 import CryptoKit
 import Supabase
 import SwiftUI
+import UIKit
 import WidgetKit
 
 /// 自分のキャラの見た目と名前。
@@ -36,7 +37,10 @@ final class SessionStore {
     func start() async {
         isSignedIn = (try? await client.auth.session) != nil
         isLoading = false
-        if isSignedIn { await refreshPartners() }
+        if isSignedIn {
+            await syncMyState()
+            await refreshPartners()
+        }
     }
 
     // MARK: Sign in with Apple
@@ -115,6 +119,32 @@ final class SessionStore {
             await refreshPartners()
         } catch {
             message = "解除できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    /// 自分の充電・バッテリー・時差を送る。画面を開いたときと、充電状態が変わったときに呼ぶ。
+    func syncMyState() async {
+        guard isSignedIn, let id = client.auth.currentUser?.id else { return }
+        let device = UIDevice.current
+        device.isBatteryMonitoringEnabled = true
+
+        struct Payload: Encodable {
+            let user_id: UUID
+            let is_charging: Bool
+            let battery_level: Int?
+            let utc_offset_minutes: Int
+        }
+        let level = device.batteryLevel  // 取れないときは -1
+        let payload = Payload(
+            user_id: id,
+            is_charging: device.batteryState == .charging || device.batteryState == .full,
+            battery_level: level >= 0 ? Int((level * 100).rounded()) : nil,
+            utc_offset_minutes: TimeZone.current.secondsFromGMT() / 60
+        )
+        do {
+            try await client.from("user_states").upsert(payload).execute()
+        } catch {
+            // 状態の同期は黙って失敗してよい (次に開いたときに、また送る)。
         }
     }
 

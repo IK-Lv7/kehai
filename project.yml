@@ -9,6 +9,8 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
 packages:
+  KehaiCore:
+    path: KehaiCore
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: 2.0.0
@@ -23,6 +25,7 @@ targets:
     dependencies:
       - target: KehaiWidget
       - package: Supabase
+      - package: KehaiCore
     entitlements:
       path: Kehai/Kehai.entitlements
       properties:
@@ -49,6 +52,7 @@ targets:
       - character.json
     dependencies:
       - package: Supabase
+      - package: KehaiCore
     entitlements:
       path: KehaiWidget/KehaiWidget.entitlements
       properties:
