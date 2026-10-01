@@ -4,6 +4,21 @@ import Supabase
 import SwiftUI
 import WidgetKit
 
+/// 自分のキャラの見た目と名前。
+struct MyProfile: Codable {
+    var displayName: String
+    var color: String
+    var characterStyle: String
+    var creature: String
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case color
+        case characterStyle = "character_style"
+        case creature
+    }
+}
+
 @MainActor
 @Observable
 final class SessionStore {
@@ -12,6 +27,7 @@ final class SessionStore {
     var isLoading = true
     var isSignedIn = false
     var partners: [PartnerState] = []
+    var profile: MyProfile?
     var inviteCode: String?
     var message: String?
 
@@ -58,6 +74,7 @@ final class SessionStore {
         try? await client.auth.signOut()
         isSignedIn = false
         partners = []
+        profile = nil
         inviteCode = nil
         PartnerCache.clear()
         WidgetCenter.shared.reloadAllTimelines()
@@ -101,6 +118,35 @@ final class SessionStore {
         }
     }
 
+    func loadProfile() async {
+        guard let id = client.auth.currentUser?.id else { return }
+        do {
+            profile = try await client.from("profiles")
+                .select("display_name, color, character_style, creature")
+                .eq("id", value: id)
+                .single()
+                .execute()
+                .value
+        } catch {
+            message = "プロフィールを取得できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    func updateAppearance(style: String, creature: String, color: String) async {
+        guard let id = client.auth.currentUser?.id else { return }
+        do {
+            try await client.from("profiles")
+                .update(["character_style": style, "creature": creature, "color": color])
+                .eq("id", value: id)
+                .execute()
+            profile?.characterStyle = style
+            profile?.creature = creature
+            profile?.color = color
+        } catch {
+            message = "保存できませんでした: \(error.localizedDescription)"
+        }
+    }
+
     func updateDisplayName(_ name: String) async {
         guard let id = client.auth.currentUser?.id else { return }
         do {
@@ -108,6 +154,7 @@ final class SessionStore {
                 .update(["display_name": name])
                 .eq("id", value: id)
                 .execute()
+            profile?.displayName = name
             message = "名前を保存しました"
         } catch {
             message = "保存できませんでした: \(error.localizedDescription)"

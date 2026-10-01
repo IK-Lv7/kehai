@@ -5,6 +5,22 @@ import WidgetKit
 struct KehaiEntry: TimelineEntry {
     let date: Date
     let partners: [PartnerState]
+    /// 相手ごとの、最後にトントンを送れた時刻。値が変わると、まるが跳ねる。
+    let tapStamps: [UUID: Double]
+
+    /// 送ってから数秒の間は、トントンの絵を出す。
+    func isTapping(_ partnerId: UUID) -> Bool {
+        let stamp = tapStamps[partnerId] ?? 0
+        return stamp > 0 && date.timeIntervalSince1970 - stamp < 4
+    }
+
+    init(date: Date, partners: [PartnerState]) {
+        self.date = date
+        self.partners = partners
+        self.tapStamps = Dictionary(
+            uniqueKeysWithValues: partners.map { ($0.partnerId, TapFeedback.stamp(for: $0.partnerId)) }
+        )
+    }
 }
 
 struct KehaiProvider: TimelineProvider {
@@ -19,21 +35,38 @@ struct KehaiProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<KehaiEntry>) -> Void) {
         Task {
             let partners = (try? await PartnerFetcher.fetch()) ?? PartnerCache.load()
-            let entry = KehaiEntry(date: .now, partners: partners)
+            var entries = [KehaiEntry(date: .now, partners: partners)]
+            // 送った直後なら、数秒後に通常の絵へ戻す。
+            if partners.contains(where: { entries[0].isTapping($0.partnerId) }) {
+                entries.append(KehaiEntry(date: .now.addingTimeInterval(4), partners: partners))
+            }
             // 更新の頻度は iOS が決める。これは「このくらいで再取得してほしい」という希望。
             let next = Date().addingTimeInterval(15 * 60)
-            completion(Timeline(entries: [entry], policy: .after(next)))
+            completion(Timeline(entries: entries, policy: .after(next)))
         }
     }
 }
 
 struct PartnerCell: View {
     let partner: PartnerState
+    let tapStamp: Double
+    /// 送った直後だけ、トントンの絵 (手を振る・きらっ) にする。
+    let isTapping: Bool
 
     var body: some View {
         VStack(spacing: 4) {
             Button(intent: TonTonIntent(partnerId: partner.partnerId.uuidString)) {
-                MaruView(color: Color(hex: partner.color))
+                CharacterView(
+                    style: partner.characterStyle,
+                    creature: partner.creature,
+                    color: partner.color,
+                    state: isTapping ? .tap : .awake
+                )
+                    // 送信に成功すると tapStamp が変わり、作り直されて「ぽん」と現れる。
+                    .id(tapStamp)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    // 送信している間は、少し暗くなる。
+                    .invalidatableContent()
             }
             .buttonStyle(.plain)
             Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
@@ -59,11 +92,19 @@ struct KehaiWidgetView: View {
                     Text("アプリでつながろう").font(.caption)
                 }
             } else if family == .systemSmall {
-                PartnerCell(partner: entry.partners[0])
+                PartnerCell(
+                    partner: entry.partners[0],
+                    tapStamp: entry.tapStamps[entry.partners[0].partnerId] ?? 0,
+                    isTapping: entry.isTapping(entry.partners[0].partnerId)
+                )
             } else {
                 HStack(spacing: 8) {
                     ForEach(entry.partners.prefix(4)) { partner in
-                        PartnerCell(partner: partner)
+                        PartnerCell(
+                            partner: partner,
+                            tapStamp: entry.tapStamps[partner.partnerId] ?? 0,
+                            isTapping: entry.isTapping(partner.partnerId)
+                        )
                     }
                 }
             }

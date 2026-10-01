@@ -4,6 +4,8 @@ struct PartnerState: Codable, Identifiable {
     let partnerId: UUID
     let displayName: String
     let color: String
+    let characterStyle: String
+    let creature: String
     let updatedAt: Date
 
     var id: UUID { partnerId }
@@ -12,6 +14,8 @@ struct PartnerState: Codable, Identifiable {
         case partnerId = "partner_id"
         case displayName = "display_name"
         case color
+        case characterStyle = "character_style"
+        case creature
         case updatedAt = "updated_at"
     }
 }
@@ -46,5 +50,18 @@ enum PartnerFetcher {
             .rpc("get_partner_states").execute().value
         PartnerCache.save(partners)
         return partners
+    }
+}
+
+/// 最後にトントンを送れた時刻。ウィジェットが「ぽん」と跳ねる演出に使う。
+enum TapFeedback {
+    private static func key(_ partnerId: String) -> String { "lastTap.\(partnerId)" }
+
+    static func record(partnerId: String) {
+        SharedConfig.defaults.set(Date().timeIntervalSince1970, forKey: key(partnerId))
+    }
+
+    static func stamp(for partnerId: UUID) -> Double {
+        SharedConfig.defaults.double(forKey: key(partnerId.uuidString))
     }
 }

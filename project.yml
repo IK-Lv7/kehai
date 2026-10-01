@@ -16,7 +16,10 @@ targets:
   Kehai:
     type: application
     platform: iOS
-    sources: [Kehai, Shared]
+    sources:
+      - Kehai
+      - Shared
+      - character.json
     dependencies:
       - target: KehaiWidget
       - package: Supabase
@@ -40,7 +43,10 @@ targets:
   KehaiWidget:
     type: app-extension
     platform: iOS
-    sources: [KehaiWidget, Shared]
+    sources:
+      - KehaiWidget
+      - Shared
+      - character.json
     dependencies:
       - package: Supabase
     entitlements:
