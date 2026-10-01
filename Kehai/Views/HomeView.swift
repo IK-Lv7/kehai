@@ -44,19 +44,7 @@ struct HomeView: View {
                             .frame(width: 96, height: 96)
                         Spacer()
                     }
-                    Picker("スタイル", selection: $style) {
-                        Text("まる").tag("maru")
-                        Text("ドット絵").tag("dot")
-                    }
-                    .pickerStyle(.segmented)
-                    if style == "dot" {
-                        Picker("いきもの", selection: $creature) {
-                            ForEach(Creature.all, id: \.id) { item in
-                                Text(item.name).tag(item.id)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
+                    characterGrid
                     HStack(spacing: 16) {
                         ForEach(CharacterPalette.colors, id: \.hex) { item in
                             Button {
@@ -118,6 +106,38 @@ struct HomeView: View {
             .onChange(of: style) { saveAppearance() }
             .onChange(of: creature) { saveAppearance() }
             .onChange(of: color) { saveAppearance() }
+        }
+    }
+
+    /// キャラ一覧。色ごとには並べず、代表色の1体だけを表示し、色は下のパレットで選ぶ。
+    private var characterGrid: some View {
+        let representative = CharacterPalette.colors[0].hex
+        let items: [(key: String, name: String, style: String, creature: String)] =
+            [("maru", "まる", "maru", creature)]
+            + Creature.all.map { ($0.id, $0.name, "dot", $0.id) }
+        let selectedKey = style == "dot" ? creature : "maru"
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
+            ForEach(items, id: \.key) { item in
+                Button {
+                    style = item.style
+                    creature = item.creature
+                } label: {
+                    VStack(spacing: 6) {
+                        CharacterView(style: item.style, creature: item.creature, color: representative)
+                            .frame(width: 56, height: 56)
+                        Text(item.name).font(.caption)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.accentColor, lineWidth: selectedKey == item.key ? 3 : 0)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.name)
+            }
         }
     }
 
