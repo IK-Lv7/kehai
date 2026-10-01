@@ -30,8 +30,8 @@ targets:
       properties:
         CFBundleDisplayName: Kehai
         UILaunchScreen: {}
-        # 暗号化は HTTPS 通信のみ。TestFlight で毎回輸出コンプライアンスを聞かれないようにする。
-        ITSAppUsesNonEncryptionExemption: true
+        # 暗号化は OS 標準の HTTPS 通信のみ。TestFlight で毎回輸出コンプライアンスを聞かれないようにする。
+        ITSAppUsesNonEncryption: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hinodeentertainment.kehai
