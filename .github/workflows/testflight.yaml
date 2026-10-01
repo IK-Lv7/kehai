@@ -81,6 +81,8 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/Kehai.xcarchive" \
             -allowProvisioningUpdates \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
             -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \

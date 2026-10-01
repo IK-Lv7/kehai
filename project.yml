@@ -8,6 +8,10 @@ settings:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
 targets:
   Kehai:
     type: application
@@ -15,6 +19,12 @@ targets:
     sources: [Kehai, Shared]
     dependencies:
       - target: KehaiWidget
+      - package: Supabase
+    entitlements:
+      path: Kehai/Kehai.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.security.application-groups: [group.com.hinodeentertainment.kehai]
     info:
       path: Kehai/Info.plist
       properties:
@@ -31,6 +41,10 @@ targets:
     type: app-extension
     platform: iOS
     sources: [KehaiWidget, Shared]
+    entitlements:
+      path: KehaiWidget/KehaiWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.hinodeentertainment.kehai]
     info:
       path: KehaiWidget/Info.plist
       properties:
