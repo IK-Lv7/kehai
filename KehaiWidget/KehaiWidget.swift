@@ -80,10 +80,6 @@ struct PartnerCell: View {
             Text(presence.label)
                 .font(.caption2)
                 .lineLimit(1)
-            (Text(partner.updatedAt, style: .relative) + Text("前"))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
     }
 }
