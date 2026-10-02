@@ -7,6 +7,7 @@ struct HomeView: View {
     @State private var style = "maru"
     @State private var creature = "cat"
     @State private var color = CharacterPalette.colors[0].hex
+    @State private var partnerToRemove: PartnerState?
 
     var body: some View {
         NavigationStack {
@@ -30,7 +31,7 @@ struct HomeView: View {
                             }
                             Spacer()
                             Button("解除", role: .destructive) {
-                                Task { await store.remove(partner) }
+                                partnerToRemove = partner
                             }
                             .buttonStyle(.borderless)
                         }
@@ -102,6 +103,22 @@ struct HomeView: View {
                     creature = profile.creature
                     color = profile.color
                 }
+            }
+            .confirmationDialog(
+                "\(partnerToRemove.map { $0.displayName.isEmpty ? "この人" : $0.displayName } ?? "")とのつながりを解除しますか？",
+                isPresented: Binding(
+                    get: { partnerToRemove != nil },
+                    set: { if !$0 { partnerToRemove = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: partnerToRemove
+            ) { partner in
+                Button("解除する", role: .destructive) {
+                    Task { await store.remove(partner) }
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: { _ in
+                Text("もう一度つながるには、新しい招待コードが必要です。")
             }
             .onChange(of: style) { saveAppearance() }
             .onChange(of: creature) { saveAppearance() }
