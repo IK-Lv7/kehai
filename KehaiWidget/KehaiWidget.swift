@@ -57,10 +57,9 @@ struct PartnerCell: View {
 
     private var presence: PresenceState { partner.presence(now: now) }
 
-    /// ドット絵の絵は、起きてる・寝てる・トントンの3つ。
+    /// 状態は絵で見せる (寝てる・充電中・作業中)。送った直後だけトントンの絵。
     private var spriteState: CharacterState {
-        if isTapping { return .tap }
-        return presence == .sleeping ? .sleep : .awake
+        isTapping ? .tap : partner.characterState(now: now)
     }
 
     var body: some View {
@@ -74,11 +73,9 @@ struct PartnerCell: View {
                 )
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(presence.label)
             Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
                 .font(.caption)
-                .lineLimit(1)
-            Text(presence.label)
-                .font(.caption2)
                 .lineLimit(1)
         }
     }
