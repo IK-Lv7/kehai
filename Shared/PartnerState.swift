@@ -34,6 +34,16 @@ struct PartnerState: Codable, Identifiable {
         )
     }
 
+    /// 今の状態を表す、キャラの絵。文字は出さず、絵だけで伝える。
+    func characterState(now: Date) -> CharacterState {
+        switch presence(now: now) {
+        case .sleeping: .sleep
+        case .charging: .charge
+        case .working: .work
+        case .awake: .awake
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case partnerId = "partner_id"
         case displayName = "display_name"

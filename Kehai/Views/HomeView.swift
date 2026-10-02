@@ -21,14 +21,12 @@ struct HomeView: View {
                             CharacterView(
                                 style: partner.characterStyle,
                                 creature: partner.creature,
-                                color: partner.color
+                                color: partner.color,
+                                state: partner.characterState(now: Date())
                             )
                             .frame(width: 40, height: 40)
-                            VStack(alignment: .leading) {
-                                Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
-                                Text(partner.presence(now: Date()).label)
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                            .accessibilityLabel(partner.presence(now: Date()).label)
+                            Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
                             Spacer()
                             Button("解除", role: .destructive) {
                                 partnerToRemove = partner

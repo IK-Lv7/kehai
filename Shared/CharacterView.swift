@@ -3,6 +3,16 @@ import UIKit
 
 enum CharacterState: String {
     case awake, sleep, tap
+    /// 充電中・作業中は、起きてる絵に目印のアイコンを重ねて見せる。
+    case charge, work
+
+    /// ドット絵の絵として使うキー (character.json)。絵があるのは awake / sleep / tap だけ。
+    var spriteKey: String {
+        switch self {
+        case .charge, .work: CharacterState.awake.rawValue
+        default: rawValue
+        }
+    }
 }
 
 /// 選べる色。1人1色で、自分で選ぶ。
@@ -44,14 +54,14 @@ enum PixelRenderer {
 
     /// 1ピクセル=1ドットの小さな画像にする。拡大は表示側で、補間なしで行う。
     static func image(creature: String, state: CharacterState, colorHex: String) -> UIImage? {
-        let key = "\(creature)-\(state.rawValue)-\(colorHex)"
+        let key = "\(creature)-\(state.spriteKey)-\(colorHex)"
         lock.lock()
         defer { lock.unlock() }
         if let cached = cache[key] { return cached }
 
         guard
             let sheet = SpriteSheet.shared,
-            let rows = sheet.sprites[creature]?[state.rawValue],
+            let rows = sheet.sprites[creature]?[state.spriteKey],
             rows.count == sheet.size
         else { return nil }
 
@@ -96,6 +106,7 @@ enum PixelRenderer {
 }
 
 /// style が "dot" ならドット絵、それ以外は「まる」。
+/// 状態は絵で伝える。寝てる=目を閉じる (ドット絵は専用の絵)、充電中・作業中=右下のアイコン。
 struct CharacterView: View {
     var style: String
     var creature: String
@@ -103,6 +114,12 @@ struct CharacterView: View {
     var state: CharacterState = .awake
 
     var body: some View {
+        character
+            .overlay(alignment: .bottomTrailing) { StateBadge(state: state, style: style) }
+    }
+
+    @ViewBuilder
+    private var character: some View {
         if style == "dot",
            let image = PixelRenderer.image(creature: creature, state: state, colorHex: color) {
             Image(uiImage: image)
@@ -110,7 +127,39 @@ struct CharacterView: View {
                 .interpolation(.none)
                 .aspectRatio(1, contentMode: .fit)
         } else {
-            MaruView(color: Color(hex: color))
+            MaruView(color: Color(hex: color), isSleeping: state == .sleep)
+        }
+    }
+}
+
+/// キャラの右下に重ねる、状態の目印。
+private struct StateBadge: View {
+    var state: CharacterState
+    var style: String
+
+    private var symbol: (name: String, tint: Color)? {
+        switch state {
+        case .charge: ("bolt.fill", .yellow)
+        case .work: ("laptopcomputer", .white)
+        // ドット絵の「寝てる」は絵そのもので伝わるので、まるのときだけ付ける。
+        case .sleep where style != "dot": ("moon.zzz.fill", .white)
+        default: nil
+        }
+    }
+
+    var body: some View {
+        if let symbol {
+            GeometryReader { geo in
+                let side = min(geo.size.width, geo.size.height) * 0.42
+                Image(systemName: symbol.name)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(side * 0.2)
+                    .frame(width: side, height: side)
+                    .foregroundStyle(symbol.tint)
+                    .background(Circle().fill(Color(white: 0.18)))
+                    .position(x: geo.size.width - side / 2, y: geo.size.height - side / 2)
+            }
         }
     }
 }
