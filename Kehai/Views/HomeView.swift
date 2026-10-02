@@ -25,7 +25,7 @@ struct HomeView: View {
                             .frame(width: 40, height: 40)
                             VStack(alignment: .leading) {
                                 Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
-                                Text(partner.updatedAt, style: .relative)
+                                Text(partner.presence(now: Date()).label)
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
