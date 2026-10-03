@@ -24,27 +24,37 @@ struct KehaiEntry: TimelineEntry {
     }
 }
 
-struct KehaiProvider: TimelineProvider {
+struct KehaiProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> KehaiEntry {
         KehaiEntry(date: .now, partners: [])
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (KehaiEntry) -> Void) {
-        completion(KehaiEntry(date: .now, partners: PartnerCache.load()))
+    func snapshot(for configuration: SelectPartnersIntent, in context: Context) async -> KehaiEntry {
+        KehaiEntry(
+            date: .now,
+            partners: select(from: PartnerCache.load(), configuration: configuration, family: context.family)
+        )
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<KehaiEntry>) -> Void) {
-        Task {
-            let partners = (try? await PartnerFetcher.fetch()) ?? PartnerCache.load()
-            var entries = [KehaiEntry(date: .now, partners: partners)]
-            // 送った直後なら、数秒後に通常の絵へ戻す。
-            if partners.contains(where: { entries[0].isTapping($0.partnerId) }) {
-                entries.append(KehaiEntry(date: .now.addingTimeInterval(4), partners: partners))
-            }
-            // 更新の頻度は iOS が決める。これは「このくらいで再取得してほしい」という希望。
-            let next = Date().addingTimeInterval(15 * 60)
-            completion(Timeline(entries: entries, policy: .after(next)))
+    func timeline(for configuration: SelectPartnersIntent, in context: Context) async -> Timeline<KehaiEntry> {
+        let all = (try? await PartnerFetcher.fetch()) ?? PartnerCache.load()
+        let partners = select(from: all, configuration: configuration, family: context.family)
+        var entries = [KehaiEntry(date: .now, partners: partners)]
+        // 送った直後なら、数秒後に通常の絵へ戻す。
+        if partners.contains(where: { entries[0].isTapping($0.partnerId) }) {
+            entries.append(KehaiEntry(date: .now.addingTimeInterval(4), partners: partners))
         }
+        // 更新の頻度は iOS が決める。これは「このくらいで再取得してほしい」という希望。
+        let next = Date().addingTimeInterval(15 * 60)
+        return Timeline(entries: entries, policy: .after(next))
+    }
+
+    /// 編集画面で選んだ相手を、枠の数 (小=1、中=4) までに絞る。何も選ばれていなければ、つながった順。
+    private func select(from all: [PartnerState], configuration: SelectPartnersIntent, family: WidgetFamily) -> [PartnerState] {
+        let limit = family == .systemSmall ? 1 : 4
+        let selected = (configuration.partners ?? []).compactMap { UUID(uuidString: $0.id) }
+        let ids = PartnerSelection.resolve(available: all.map(\.partnerId), selected: selected, limit: limit)
+        return ids.compactMap { id in all.first { $0.partnerId == id } }
     }
 }
 
@@ -119,11 +129,16 @@ struct KehaiWidgetView: View {
 @main
 struct KehaiWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "KehaiWidget", provider: KehaiProvider()) { entry in
+        // 設定方式を変えたので、種類の名前も新しくした (古いウィジェットは追加し直しになる)。
+        AppIntentConfiguration(
+            kind: "KehaiPartnersWidget",
+            intent: SelectPartnersIntent.self,
+            provider: KehaiProvider()
+        ) { entry in
             KehaiWidgetView(entry: entry)
         }
         .configurationDisplayName("Kehai")
-        .description("大切な人の気配を、そっと。キャラをタップするとトントンが届きます。")
+        .description("大切な人の気配を、そっと。長押しの「ウィジェットを編集」で、出す相手を選べます。キャラをタップするとトントンが届きます。")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
