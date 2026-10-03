@@ -1,15 +1,32 @@
 {
   "size": 16,
-  "comment": "o=輪郭 b=本体色(tint) s=影(tintの0.8倍) w=白 p=ほっぺ y=黄 a=橙 g=灰 .=透明",
+  "comment": "o=輪郭 b=本体色(tint) s=影(tintの0.8倍) w=白 p=ほっぺ y=黄 a=橙 g=灰 .=透明 c=水色。badges=充電中・作業中の小さな印(キャラの角に重ねる。幅と高さは自由)",
   "palette": {
     "o": "#3A3340",
     "w": "#FFFFFF",
     "p": "#FF9FB0",
     "y": "#FFC933",
     "a": "#F59E42",
-    "g": "#8A8296"
+    "g": "#8A8296",
+    "c": "#7FD3F0"
   },
   "shadeFactor": 0.8,
+  "badges": {
+    "charging": [
+      "ooooooo.",
+      "oyyyyyoo",
+      "oyyyyyoo",
+      "oyyyyyo.",
+      "ooooooo."
+    ],
+    "working": [
+      ".oooooo.",
+      ".occcco.",
+      ".occcco.",
+      ".oooooo.",
+      "oooooooo"
+    ]
+  },
   "sprites": {
     "cat": {
       "awake": [

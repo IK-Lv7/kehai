@@ -13,6 +13,15 @@ enum CharacterState: String {
         default: rawValue
         }
     }
+
+    /// ドット絵に重ねる印のキー (character.json の badges)。
+    var badgeKey: String? {
+        switch self {
+        case .charge: "charging"
+        case .work: "working"
+        default: nil
+        }
+    }
 }
 
 /// 選べる色。1人1色で、自分で選ぶ。
@@ -38,6 +47,8 @@ struct SpriteSheet: Decodable {
     let palette: [String: String]
     let shadeFactor: Double
     let sprites: [String: [String: [String]]]
+    /// 充電中・作業中の小さな印 (ドット絵の角に重ねる)。
+    let badges: [String: [String]]?
 
     static let shared: SpriteSheet? = {
         guard
@@ -54,25 +65,34 @@ enum PixelRenderer {
 
     /// 1ピクセル=1ドットの小さな画像にする。拡大は表示側で、補間なしで行う。
     static func image(creature: String, state: CharacterState, colorHex: String) -> UIImage? {
-        let key = "\(creature)-\(state.spriteKey)-\(colorHex)"
+        guard let rows = SpriteSheet.shared?.sprites[creature]?[state.spriteKey] else { return nil }
+        return render(key: "\(creature)-\(state.spriteKey)-\(colorHex)", rows: rows, tintHex: colorHex)
+    }
+
+    /// 充電中・作業中の印 (character.json の badges)。キャラの色には染めない。
+    static func badge(for state: CharacterState) -> UIImage? {
+        guard let name = state.badgeKey, let rows = SpriteSheet.shared?.badges?[name] else { return nil }
+        return render(key: "badge-\(name)", rows: rows, tintHex: "#FFFFFF")
+    }
+
+    private static func render(key: String, rows: [String], tintHex: String) -> UIImage? {
         lock.lock()
         defer { lock.unlock() }
         if let cached = cache[key] { return cached }
 
-        guard
-            let sheet = SpriteSheet.shared,
-            let rows = sheet.sprites[creature]?[state.spriteKey],
-            rows.count == sheet.size
+        guard let sheet = SpriteSheet.shared,
+              let width = rows.first?.count, width > 0,
+              rows.allSatisfy({ $0.count == width })
         else { return nil }
 
-        let tint = HexColor.components(colorHex)
+        let tint = HexColor.components(tintHex)
         let shade = sheet.shadeFactor
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
-        let side = CGFloat(sheet.size)
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+        let size = CGSize(width: CGFloat(width), height: CGFloat(rows.count))
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
 
         let image = renderer.image { context in
             for (y, row) in rows.enumerated() {
@@ -106,7 +126,8 @@ enum PixelRenderer {
 }
 
 /// style が "dot" ならドット絵、それ以外は「まる」。
-/// 状態は絵で伝える。寝てる=目を閉じる (ドット絵は専用の絵)、充電中・作業中=右下のアイコン。
+/// 状態は絵で伝える。寝てる=目を閉じる (ドット絵は専用の絵)、充電中・作業中=右下の印。
+/// 印は、ドット絵ならドット絵の電池・ノートパソコン、まるなら SF Symbol。
 struct CharacterView: View {
     var style: String
     var creature: String
@@ -126,6 +147,7 @@ struct CharacterView: View {
                 .resizable()
                 .interpolation(.none)
                 .aspectRatio(1, contentMode: .fit)
+                .overlay { PixelBadge(state: state) }
         } else {
             MaruView(color: Color(hex: color), isSleeping: state == .sleep)
         }
@@ -148,7 +170,8 @@ private struct StateBadge: View {
     }
 
     var body: some View {
-        if let symbol {
+        // ドット絵の充電中・作業中は、ドット絵の印 (PixelBadge) を使う。
+        if style != "dot", let symbol {
             GeometryReader { geo in
                 let side = min(geo.size.width, geo.size.height) * 0.42
                 Image(systemName: symbol.name)
@@ -159,6 +182,25 @@ private struct StateBadge: View {
                     .foregroundStyle(symbol.tint)
                     .background(Circle().fill(Color(white: 0.18)))
                     .position(x: geo.size.width - side / 2, y: geo.size.height - side / 2)
+            }
+        }
+    }
+}
+
+/// ドット絵の右下に重ねる、充電中 (電池)・作業中 (ノートパソコン) の印。
+private struct PixelBadge: View {
+    var state: CharacterState
+
+    var body: some View {
+        if let image = PixelRenderer.badge(for: state) {
+            GeometryReader { geo in
+                let width = geo.size.width * 0.42
+                let height = width * image.size.height / image.size.width
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(width: width, height: height)
+                    .position(x: geo.size.width - width / 2, y: geo.size.height - height / 2)
             }
         }
     }
