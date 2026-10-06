@@ -70,9 +70,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/keys"
           printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
 
-      - name: アーカイブ
-        # 署名は自動署名。アプリとウィジェットの証明書・プロファイル (App Group 含む) は、
-        # API キーを使って Apple 側で自動的に作られる。
+      - name: アーカイブ (署名なし)
+        # ここでは署名しない。自動署名でアーカイブすると、実行のたびに開発用証明書が
+        # Apple 側に1つ増え、上限 (Your account has reached the maximum number of
+        # certificates) に達して失敗する。署名は、次の書き出しで
+        # クラウド管理の配布用証明書とプロファイル (App Group・プッシュ通知含む) を使って行う。
+        # 署名なしだと権限 (entitlements) が埋め込まれないことがあるので、アドホック署名 ("-") で
+        # 権限だけを埋め込んでおく (書き出し時に、配布用の署名で置き換えられる)。
         run: |
           xcodebuild archive \
             -project "$PROJECT" \
@@ -80,15 +84,37 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/Kehai.xcarchive" \
-            -allowProvisioningUpdates \
             -skipMacroValidation \
             -skipPackagePluginValidation \
-            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             MARKETING_VERSION="$MARKETING_VERSION" \
-            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="-" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES
+
+      - name: 権限 (entitlements) が埋め込まれているか確認
+        # 書き出しで App Group・Sign in with Apple・プッシュ通知が落ちたまま TestFlight に
+        # 上がると、実機で動かない。アップロードの前に、ここで止める。
+        run: |
+          app="$RUNNER_TEMP/Kehai.xcarchive/Products/Applications/Kehai.app"
+          ext="$app/PlugIns/KehaiWidget.appex"
+          check() {
+            local bundle="$1"; shift
+            local ents
+            ents=$(codesign -d --entitlements :- "$bundle" 2>/dev/null || true)
+            echo "== $bundle"; echo "$ents"
+            for key in "$@"; do
+              if ! grep -q "$key" <<<"$ents"; then
+                echo "::error::$bundle の署名に $key がありません"
+                return 1
+              fi
+            done
+          }
+          check "$app" com.apple.security.application-groups com.apple.developer.applesignin aps-environment
+          check "$ext" com.apple.security.application-groups
 
       - name: TestFlight にアップロード
         run: |
