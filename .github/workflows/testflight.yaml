@@ -73,10 +73,9 @@ jobs:
       - name: アーカイブ (署名なし)
         # ここでは署名しない。自動署名でアーカイブすると、実行のたびに開発用証明書が
         # Apple 側に1つ増え、上限 (Your account has reached the maximum number of
-        # certificates) に達して失敗する。署名は、次の書き出しで
+        # certificates) に達して失敗する。署名は、書き出しで
         # クラウド管理の配布用証明書とプロファイル (App Group・プッシュ通知含む) を使って行う。
-        # 署名なしだと権限 (entitlements) が埋め込まれないことがあるので、アドホック署名 ("-") で
-        # 権限だけを埋め込んでおく (書き出し時に、配布用の署名で置き換えられる)。
+        # (ビルド設定でのアドホック署名は、iOS の SDK では使えない。)
         run: |
           xcodebuild archive \
             -project "$PROJECT" \
@@ -89,11 +88,19 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="-" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGNING_ALLOWED=YES
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: 権限 (entitlements) を埋め込む
+        # 署名なしのアーカイブには、App Group・Sign in with Apple・プッシュ通知の権限が入らない。
+        # codesign コマンドでアドホック署名をして、権限だけ入れておく。
+        # 書き出しで、配布用の署名に置き換えられる (権限は引き継がれる)。
+        # 中のもの (ウィジェット) を先に、外側 (アプリ) を後に署名する。
+        run: |
+          app="$RUNNER_TEMP/Kehai.xcarchive/Products/Applications/Kehai.app"
+          codesign --force --sign - --timestamp=none \
+            --entitlements KehaiWidget/KehaiWidget.entitlements "$app/PlugIns/KehaiWidget.appex"
+          codesign --force --sign - --timestamp=none \
+            --entitlements Kehai/Kehai.entitlements "$app"
 
       - name: 権限 (entitlements) が埋め込まれているか確認
         # 書き出しで App Group・Sign in with Apple・プッシュ通知が落ちたまま TestFlight に
