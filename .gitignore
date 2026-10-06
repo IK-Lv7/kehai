@@ -3,3 +3,4 @@ xcuserdata/
 build/
 .DS_Store
 CLAUDE.md
+supabase/.temp/
