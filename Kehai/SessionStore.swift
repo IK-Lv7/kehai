@@ -1,5 +1,6 @@
 import AuthenticationServices
 import CryptoKit
+import KehaiCore
 import Supabase
 import SwiftUI
 import UIKit
@@ -11,12 +12,42 @@ struct MyProfile: Codable {
     var color: String
     var characterStyle: String
     var creature: String
+    var receiveTaps: Bool
 
     enum CodingKeys: String, CodingKey {
         case displayName = "display_name"
         case color
         case characterStyle = "character_style"
         case creature
+        case receiveTaps = "receive_taps"
+    }
+}
+
+/// 相手ひとりに対して、自分のどの情報を見せるか。
+struct ShareSettings: Codable, Equatable {
+    var viewerId: UUID
+    var shareCharging = true
+    var shareWorking = true
+    var shareSleep = true
+
+    enum CodingKeys: String, CodingKey {
+        case viewerId = "viewer_id"
+        case shareCharging = "share_charging"
+        case shareWorking = "share_working"
+        case shareSleep = "share_sleep"
+    }
+}
+
+/// 自分の状態のうち、画面で変えられるもの。
+private struct MyStateRow: Decodable {
+    let isWorking: Bool
+    let sleepStart: String
+    let sleepEnd: String
+
+    enum CodingKeys: String, CodingKey {
+        case isWorking = "is_working"
+        case sleepStart = "sleep_start"
+        case sleepEnd = "sleep_end"
     }
 }
 
@@ -31,6 +62,11 @@ final class SessionStore {
     var profile: MyProfile?
     var inviteCode: String?
     var message: String?
+    var isWorking = false
+    /// 就寝時間帯 (0時からの分)。
+    var sleepStartMinutes = 23 * 60
+    var sleepEndMinutes = 7 * 60
+    var shareSettings: [UUID: ShareSettings] = [:]
 
     private var currentNonce: String?
 
@@ -40,6 +76,7 @@ final class SessionStore {
         if isSignedIn {
             await syncMyState()
             await refreshPartners()
+            await PushRegistrar.uploadStored()
         }
     }
 
@@ -69,19 +106,33 @@ final class SessionStore {
             )
             isSignedIn = true
             await refreshPartners()
+            await PushRegistrar.uploadStored()
         } catch {
             message = "ログインに失敗しました: \(error.localizedDescription)"
         }
     }
 
     func signOut() async {
+        await PushRegistrar.unregister()
         try? await client.auth.signOut()
         isSignedIn = false
         partners = []
         profile = nil
         inviteCode = nil
+        shareSettings = [:]
         PartnerCache.clear()
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// アカウントと、それに紐づくデータをすべて消す。成功したらログアウト状態に戻る。
+    func deleteAccount() async {
+        do {
+            try await client.rpc("delete_account").execute()
+            await signOut()
+            message = "アカウントを削除しました"
+        } catch {
+            message = "アカウントを削除できませんでした: \(error.localizedDescription)"
+        }
     }
 
     // MARK: ペアリング
@@ -90,6 +141,10 @@ final class SessionStore {
         do {
             partners = try await PartnerFetcher.fetch()
             WidgetCenter.shared.reloadAllTimelines()
+            // 誰かとつながってから、通知の許可を聞く (つながる前は、聞く理由が無い)。
+            if !partners.isEmpty, profile?.receiveTaps ?? true {
+                await PushRegistrar.requestAndRegister()
+            }
         } catch {
             message = "なかまの取得に失敗しました: \(error.localizedDescription)"
         }
@@ -152,7 +207,7 @@ final class SessionStore {
         guard let id = client.auth.currentUser?.id else { return }
         do {
             profile = try await client.from("profiles")
-                .select("display_name, color, character_style, creature")
+                .select("display_name, color, character_style, creature, receive_taps")
                 .eq("id", value: id)
                 .single()
                 .execute()
@@ -173,6 +228,102 @@ final class SessionStore {
             profile?.creature = creature
             profile?.color = color
         } catch {
+            message = "保存できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    func setReceiveTaps(_ on: Bool) async {
+        guard let id = client.auth.currentUser?.id else { return }
+        do {
+            try await client.from("profiles")
+                .update(["receive_taps": on])
+                .eq("id", value: id)
+                .execute()
+            profile?.receiveTaps = on
+            if on { await PushRegistrar.requestAndRegister() }
+        } catch {
+            message = "保存できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: 自分の状態 (作業中・就寝時間帯)
+
+    func loadMyState() async {
+        guard let id = client.auth.currentUser?.id else { return }
+        do {
+            let row: MyStateRow = try await client.from("user_states")
+                .select("is_working, sleep_start, sleep_end")
+                .eq("user_id", value: id)
+                .single()
+                .execute()
+                .value
+            isWorking = row.isWorking
+            sleepStartMinutes = PresenceResolver.minutes(fromTime: row.sleepStart) ?? sleepStartMinutes
+            sleepEndMinutes = PresenceResolver.minutes(fromTime: row.sleepEnd) ?? sleepEndMinutes
+        } catch {
+            message = "状態を取得できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    func setWorking(_ on: Bool) async {
+        do {
+            try await MyStateWriter.setWorking(on)
+            isWorking = on
+        } catch {
+            message = "保存できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    func updateSleepWindow(startMinutes: Int, endMinutes: Int) async {
+        guard let id = client.auth.currentUser?.id else { return }
+        func time(_ minutes: Int) -> String {
+            String(format: "%02d:%02d:00", minutes / 60, minutes % 60)
+        }
+        do {
+            try await client.from("user_states")
+                .update(["sleep_start": time(startMinutes), "sleep_end": time(endMinutes)])
+                .eq("user_id", value: id)
+                .execute()
+            sleepStartMinutes = startMinutes
+            sleepEndMinutes = endMinutes
+        } catch {
+            message = "保存できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: 見せる情報 (相手ごと)
+
+    func settings(for partnerId: UUID) -> ShareSettings {
+        shareSettings[partnerId] ?? ShareSettings(viewerId: partnerId)
+    }
+
+    func loadShareSettings() async {
+        do {
+            let rows: [ShareSettings] = try await client.rpc("get_share_settings").execute().value
+            shareSettings = Dictionary(uniqueKeysWithValues: rows.map { ($0.viewerId, $0) })
+        } catch {
+            message = "設定を取得できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    func updateShareSettings(_ settings: ShareSettings) async {
+        struct Params: Encodable {
+            let p_viewer: UUID
+            let p_charging: Bool
+            let p_working: Bool
+            let p_sleep: Bool
+        }
+        let previous = shareSettings[settings.viewerId]
+        shareSettings[settings.viewerId] = settings
+        do {
+            try await client.rpc("set_share_settings", params: Params(
+                p_viewer: settings.viewerId,
+                p_charging: settings.shareCharging,
+                p_working: settings.shareWorking,
+                p_sleep: settings.shareSleep
+            )).execute()
+        } catch {
+            shareSettings[settings.viewerId] = previous
             message = "保存できませんでした: \(error.localizedDescription)"
         }
     }

@@ -8,6 +8,9 @@ struct HomeView: View {
     @State private var creature = "cat"
     @State private var color = CharacterPalette.colors[0].hex
     @State private var partnerToRemove: PartnerState?
+    @State private var confirmingDelete = false
+    @State private var sleepStart = Date()
+    @State private var sleepEnd = Date()
 
     var body: some View {
         NavigationStack {
@@ -63,6 +66,46 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity)
                 }
 
+                Section {
+                    Toggle("さぎょうちゅう", isOn: Binding(
+                        get: { store.isWorking },
+                        set: { newValue in Task { await store.setWorking(newValue) } }
+                    ))
+                    DatePicker("ねる時間", selection: $sleepStart, displayedComponents: .hourAndMinute)
+                    DatePicker("おきる時間", selection: $sleepEnd, displayedComponents: .hourAndMinute)
+                } header: {
+                    Text("自分の状態")
+                } footer: {
+                    Text("ねる時間のあいだ、充電しているか、しばらくアプリが動いていないと、相手には「ねてる」と見えます。コントロールセンターにも「さぎょうちゅう」のボタンを置けます。")
+                }
+
+                if !store.partners.isEmpty {
+                    Section {
+                        ForEach(store.partners) { partner in
+                            NavigationLink {
+                                PartnerShareView(partner: partner)
+                            } label: {
+                                Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
+                            }
+                        }
+                    } header: {
+                        Text("見せる情報")
+                    } footer: {
+                        Text("相手ごとに、自分の何を見せるかを選べます。")
+                    }
+                }
+
+                Section {
+                    Toggle("トントンの通知を受け取る", isOn: Binding(
+                        get: { store.profile?.receiveTaps ?? true },
+                        set: { newValue in Task { await store.setReceiveTaps(newValue) } }
+                    ))
+                } header: {
+                    Text("通知")
+                } footer: {
+                    Text("届かないときは、iOSの設定でKehaiの通知を許可してください。")
+                }
+
                 Section("自分のなまえ") {
                     TextField("相手に見えるなまえ", text: $displayName)
                     Button("保存") { Task { await store.updateDisplayName(displayName) } }
@@ -88,12 +131,24 @@ struct HomeView: View {
                 }
 
                 Section {
+                    Link("プライバシーポリシー", destination: SharedLinks.privacyPolicy)
+                    Link("サポート", destination: SharedLinks.support)
+                }
+
+                Section {
                     Button("ログアウト", role: .destructive) { Task { await store.signOut() } }
+                    Button("アカウントを削除", role: .destructive) { confirmingDelete = true }
+                } footer: {
+                    Text("アカウントを削除すると、なまえ・キャラ・つながり・トントンの記録がすべて消えます。")
                 }
             }
             .navigationTitle("Kehai")
             .refreshable { await store.refreshPartners() }
             .task {
+                await store.loadMyState()
+                sleepStart = Self.date(fromMinutes: store.sleepStartMinutes)
+                sleepEnd = Self.date(fromMinutes: store.sleepEndMinutes)
+                await store.loadShareSettings()
                 await store.loadProfile()
                 if let profile = store.profile {
                     displayName = profile.displayName
@@ -118,6 +173,20 @@ struct HomeView: View {
             } message: { _ in
                 Text("もう一度つながるには、新しい招待コードが必要です。")
             }
+            .confirmationDialog(
+                "アカウントを削除しますか？",
+                isPresented: $confirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("削除する", role: .destructive) {
+                    Task { await store.deleteAccount() }
+                }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("この操作は取り消せません。つながっていた人のウィジェットからも、あなたは消えます。")
+            }
+            .onChange(of: sleepStart) { saveSleepWindow() }
+            .onChange(of: sleepEnd) { saveSleepWindow() }
             .onChange(of: style) { saveAppearance() }
             .onChange(of: creature) { saveAppearance() }
             .onChange(of: color) { saveAppearance() }
@@ -153,6 +222,26 @@ struct HomeView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(item.name)
             }
+        }
+    }
+
+    private static func date(fromMinutes minutes: Int) -> Date {
+        Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()) ?? Date()
+    }
+
+    private static func minutes(from date: Date) -> Int {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+    }
+
+    /// 読み込み直後の値の反映では、保存しない (今の値と同じときは何もしない)。
+    private func saveSleepWindow() {
+        let start = Self.minutes(from: sleepStart)
+        let end = Self.minutes(from: sleepEnd)
+        guard start != store.sleepStartMinutes || end != store.sleepEndMinutes else { return }
+        Task {
+            await store.updateSleepWindow(startMinutes: start, endMinutes: end)
+            await store.refreshPartners()
         }
     }
 

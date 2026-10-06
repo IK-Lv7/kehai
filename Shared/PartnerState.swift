@@ -93,7 +93,7 @@ enum PartnerFetcher {
     }
 }
 
-/// 最後にトントンを送れた時刻。ウィジェットが「ぽん」と跳ねる演出に使う。
+/// 最後にトントンを送れた・受け取った時刻。ウィジェットが手を振る絵を出す演出に使う。
 enum TapFeedback {
     private static func key(_ partnerId: String) -> String { "lastTap.\(partnerId)" }
 

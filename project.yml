@@ -30,12 +30,16 @@ targets:
       path: Kehai/Kehai.entitlements
       properties:
         com.apple.developer.applesignin: [Default]
+        # 配布用の署名で、自動的に production に置き換わる。
+        aps-environment: development
         com.apple.security.application-groups: [group.com.hinodeentertainment.kehai]
     info:
       path: Kehai/Info.plist
       properties:
         CFBundleDisplayName: Kehai
         UILaunchScreen: {}
+        # トントンの通知が届いたとき、裏でウィジェットのキャラを更新する。
+        UIBackgroundModes: [remote-notification]
         # 暗号化は OS 標準の HTTPS 通信のみ。TestFlight で毎回輸出コンプライアンスを聞かれないようにする。
         ITSAppUsesNonEncryption: false
     settings:

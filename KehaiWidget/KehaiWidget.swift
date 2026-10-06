@@ -127,6 +127,15 @@ struct KehaiWidgetView: View {
 }
 
 @main
+struct KehaiWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        KehaiWidget()
+        if #available(iOS 18.0, *) {
+            WorkingControl()
+        }
+    }
+}
+
 struct KehaiWidget: Widget {
     var body: some WidgetConfiguration {
         // 設定方式を変えたので、種類の名前も新しくした (古いウィジェットは追加し直しになる)。

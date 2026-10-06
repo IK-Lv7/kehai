@@ -16,6 +16,8 @@ struct SignInView: View {
             }
             .frame(height: 48)
             .padding(.horizontal, 40)
+            Link("プライバシーポリシー", destination: SharedLinks.privacyPolicy)
+                .font(.footnote)
         }
         .padding()
     }
