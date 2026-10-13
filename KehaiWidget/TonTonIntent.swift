@@ -16,13 +16,7 @@ struct TonTonIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        // 3秒制限・未接続などで失敗したときは、跳ねる演出を出さない。
-        do {
-            try await makeSupabaseClient()
-                .rpc("send_tap", params: ["p_receiver": partnerId])
-                .execute()
-            TapFeedback.record(partnerId: partnerId)
-        } catch {}
+        await TapSender.send(to: partnerId)
         return .result()
     }
 }

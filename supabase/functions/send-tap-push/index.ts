@@ -21,6 +21,14 @@ const APNS_HOSTS = {
   sandbox: "https://api.sandbox.push.apple.com",
 } as const;
 
+// あいさつの種類ごとの、通知の文面。
+const KIND_TEXT: Record<string, string> = {
+  tonton: "トントン",
+  ohayo: "おはよう",
+  otsukare: "おつかれ",
+  oyasumi: "おやすみ",
+};
+
 // APNs の認証トークンは、20分〜1時間の間で使い回す。
 let cachedJwt: { token: string; issuedAt: number } | null = null;
 
@@ -42,7 +50,7 @@ Deno.serve(async (req) => {
     return new Response("unauthorized", { status: 401 });
   }
 
-  const { sender_id, receiver_id } = await req.json();
+  const { sender_id, receiver_id, kind } = await req.json();
   if (!sender_id || !receiver_id) return new Response("bad request", { status: 400 });
 
   // 受け取りをオフにしている人には送らない。
@@ -58,12 +66,13 @@ Deno.serve(async (req) => {
 
   const body = JSON.stringify({
     aps: {
-      alert: { title: sender?.display_name || "Kehai", body: "トントン" },
+      alert: { title: sender?.display_name || "Kehai", body: KIND_TEXT[kind] ?? "トントン" },
       sound: "default",
       // アプリが裏で起きられたら、ウィジェットのキャラを手を振る絵にする。
       "content-available": 1,
     },
     sender_id,
+    kind: kind ?? "tonton",
   });
   const jwt = await apnsJwt();
 
