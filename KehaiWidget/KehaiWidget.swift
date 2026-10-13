@@ -49,9 +49,9 @@ struct KehaiProvider: AppIntentTimelineProvider {
         return Timeline(entries: entries, policy: .after(next))
     }
 
-    /// 編集画面で選んだ相手を、枠の数 (小=1、中=4) までに絞る。何も選ばれていなければ、つながった順。
+    /// 編集画面で選んだ相手を、枠の数までに絞る。何も選ばれていなければ、つながった順。
     private func select(from all: [PartnerState], configuration: SelectPartnersIntent, family: WidgetFamily) -> [PartnerState] {
-        let limit = family == .systemSmall ? 1 : 4
+        let limit = family.partnerCapacity
         let selected = (configuration.partners ?? []).compactMap { UUID(uuidString: $0.id) }
         let ids = PartnerSelection.resolve(available: all.map(\.partnerId), selected: selected, limit: limit)
         return ids.compactMap { id in all.first { $0.partnerId == id } }
@@ -64,6 +64,8 @@ struct PartnerCell: View {
     /// 送った直後だけ、トントンの絵 (手を振る・きらっ) にする。
     let isTapping: Bool
     let now: Date
+    /// ロック画面は狭いので、名前を出さない。
+    var showsName = true
 
     private var presence: PresenceState { partner.presence(now: now) }
 
@@ -83,10 +85,25 @@ struct PartnerCell: View {
                 )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(presence.label)
-            Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
-                .font(.caption)
-                .lineLimit(1)
+            .accessibilityLabel(
+                "\(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)、\(presence.label)"
+            )
+            if showsName {
+                Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+extension WidgetFamily {
+    /// 大きさごとに、並べられる人数。
+    var partnerCapacity: Int {
+        switch self {
+        case .systemSmall, .accessoryCircular: 1
+        case .accessoryRectangular: 3
+        default: 4
         }
     }
 }
@@ -97,32 +114,69 @@ struct KehaiWidgetView: View {
 
     var body: some View {
         Group {
-            if entry.partners.isEmpty {
-                VStack(spacing: 6) {
-                    MaruView()
-                    Text("アプリでつながろう").font(.caption)
-                }
-            } else if family == .systemSmall {
-                PartnerCell(
-                    partner: entry.partners[0],
-                    tapStamp: entry.tapStamps[entry.partners[0].partnerId] ?? 0,
-                    isTapping: entry.isTapping(entry.partners[0].partnerId),
-                    now: entry.date
-                )
-            } else {
-                HStack(spacing: 8) {
-                    ForEach(entry.partners.prefix(4)) { partner in
-                        PartnerCell(
-                            partner: partner,
-                            tapStamp: entry.tapStamps[partner.partnerId] ?? 0,
-                            isTapping: entry.isTapping(partner.partnerId),
-                            now: entry.date
-                        )
-                    }
-                }
+            switch family {
+            case .accessoryCircular:
+                circular
+            case .accessoryRectangular:
+                rectangular
+            default:
+                home
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
+    }
+
+    @ViewBuilder
+    private var home: some View {
+        if entry.partners.isEmpty {
+            VStack(spacing: 6) {
+                MaruView()
+                Text("アプリでつながろう").font(.caption)
+            }
+        } else {
+            HStack(spacing: 8) {
+                ForEach(entry.partners.prefix(family.partnerCapacity)) { partner in
+                    cell(partner)
+                }
+            }
+        }
+    }
+
+    /// ロック画面の丸。1人のキャラだけを出す。
+    private var circular: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            if let partner = entry.partners.first {
+                cell(partner, showsName: false)
+                    .padding(6)
+            } else {
+                MaruView().padding(10)
+            }
+        }
+    }
+
+    /// ロック画面の長方形。3人までを横に並べる。
+    @ViewBuilder
+    private var rectangular: some View {
+        if entry.partners.isEmpty {
+            Text("Kehai でつながろう")
+        } else {
+            HStack(spacing: 6) {
+                ForEach(entry.partners.prefix(family.partnerCapacity)) { partner in
+                    cell(partner, showsName: false)
+                }
+            }
+        }
+    }
+
+    private func cell(_ partner: PartnerState, showsName: Bool = true) -> some View {
+        PartnerCell(
+            partner: partner,
+            tapStamp: entry.tapStamps[partner.partnerId] ?? 0,
+            isTapping: entry.isTapping(partner.partnerId),
+            now: entry.date,
+            showsName: showsName
+        )
     }
 }
 
@@ -147,7 +201,7 @@ struct KehaiWidget: Widget {
             KehaiWidgetView(entry: entry)
         }
         .configurationDisplayName("Kehai")
-        .description("大切な人の気配を、そっと。長押しの「ウィジェットを編集」で、出す相手を選べます。キャラをタップするとトントンが届きます。")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .description("大切な人の気配を、そっと。長押しの「ウィジェットを編集」で、出す相手を選べます。ロック画面にも置けます。キャラをタップするとトントンが届きます。")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
     }
 }

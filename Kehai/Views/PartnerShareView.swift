@@ -17,6 +17,8 @@ struct PartnerShareView: View {
         }
         .navigationTitle(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        // ホームの長押しから直接開いたときも、今の設定を表示する。
+        .task { await store.loadShareSettings() }
     }
 
     private func toggle(_ title: String, _ keyPath: WritableKeyPath<ShareSettings, Bool>) -> some View {

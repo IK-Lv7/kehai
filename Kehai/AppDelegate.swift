@@ -2,6 +2,11 @@ import UIKit
 import UserNotifications
 import WidgetKit
 
+extension Notification.Name {
+    /// トントンが届いた。object は送った人の ID (String)。開いている画面の更新に使う。
+    static let tapReceived = Notification.Name("KehaiTapReceived")
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _ application: UIApplication,
@@ -27,6 +32,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         if let senderId = userInfo["sender_id"] as? String {
             TapFeedback.record(partnerId: senderId)
             WidgetCenter.shared.reloadAllTimelines()
+            NotificationCenter.default.post(name: .tapReceived, object: senderId)
         }
         completionHandler(.newData)
     }

@@ -35,12 +35,16 @@ struct PartnerQuery: EntityQuery {
     }
 }
 
-/// 「ウィジェットを編集」で、出す相手を選ぶ。小サイズは1人、中サイズは最大4人。
+/// 「ウィジェットを編集」で、出す相手を選ぶ。
+/// 小サイズ・ロック画面の丸は1人、ロック画面の長方形は3人、中サイズは4人まで。
 struct SelectPartnersIntent: WidgetConfigurationIntent {
     static let title: LocalizedStringResource = "表示するなかま"
     static let description = IntentDescription("ウィジェットに出す相手を選びます。選ばないと、つながった順に出ます。")
 
-    @Parameter(title: "なかま", size: [.systemSmall: 1, .systemMedium: 4])
+    @Parameter(
+        title: "なかま",
+        size: [.systemSmall: 1, .systemMedium: 4, .accessoryCircular: 1, .accessoryRectangular: 3]
+    )
     var partners: [PartnerEntity]?
 
     init() {}
