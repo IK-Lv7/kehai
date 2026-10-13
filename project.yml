@@ -40,6 +40,10 @@ targets:
         UILaunchScreen: {}
         # トントンの通知が届いたとき、裏でウィジェットのキャラを更新する。
         UIBackgroundModes: [remote-notification]
+        # 招待リンク (kehai://join?code=...) でアプリを開く。
+        CFBundleURLTypes:
+          - CFBundleURLName: com.hinodeentertainment.kehai.invite
+            CFBundleURLSchemes: [kehai]
         # 暗号化は OS 標準の HTTPS 通信のみ。TestFlight で毎回輸出コンプライアンスを聞かれないようにする。
         ITSAppUsesNonEncryption: false
     settings:

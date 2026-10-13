@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Kehai でつながる</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.code{font-family:ui-monospace,Menlo,monospace;font-size:1.6rem;letter-spacing:.08em;background:#fff;border-radius:12px;padding:12px 16px;text-align:center;user-select:all}
+.open{display:block;text-align:center;background:#d9705a;color:#fff;text-decoration:none;font-weight:bold;border-radius:12px;padding:14px;margin:24px 0}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<h1>Kehai でつながろう</h1>
+
+<div id="valid" class="hidden">
+  <p>招待コード:</p>
+  <p class="code" id="code"></p>
+  <a class="open" id="open" href="#">Kehai で開いてつながる</a>
+  <h2>開けないとき</h2>
+  <ol>
+    <li>App Store (TestFlight) から Kehai を入れて、ログインします。</li>
+    <li>もう一度このページのボタンを押すか、アプリの「なかまを招待」→「コードを入力」に、上のコードを入れてください。</li>
+  </ol>
+  <p>招待コードは、3日で期限切れになり、1回だけ使えます。</p>
+</div>
+
+<div id="invalid" class="hidden">
+  <p>招待コードが見つかりませんでした。招待してくれた人に、もう一度リンクを送ってもらってください。</p>
+</div>
+
+<p><a href="support.html">サポート</a> ・ <a href="privacy.html">プライバシーポリシー</a></p>
+
+<script>
+(function () {
+  var raw = new URLSearchParams(location.search).get("code") || "";
+  var code = raw.trim().toUpperCase();
+  if (!/^[A-Z0-9-]{1,20}$/.test(code)) {
+    document.getElementById("invalid").classList.remove("hidden");
+    return;
+  }
+  var appURL = "kehai://join?code=" + encodeURIComponent(code);
+  document.getElementById("code").textContent = code;
+  document.getElementById("open").href = appURL;
+  document.getElementById("valid").classList.remove("hidden");
+  // アプリが入っていれば、そのまま開く。
+  location.href = appURL;
+})();
+</script>
+</body>
+</html>
