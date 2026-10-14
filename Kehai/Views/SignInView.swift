@@ -9,6 +9,11 @@ struct SignInView: View {
             MaruView().frame(width: 120, height: 120)
             Text("Kehai").font(.title.bold())
             Text("気配を、そっと届ける。").foregroundStyle(.secondary)
+            if store.pendingInviteCode != nil {
+                Label("招待を受け取りました。ログインすると、つながれます。", systemImage: "envelope.open")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+            }
             SignInWithAppleButton(.signIn) { request in
                 store.prepare(request)
             } onCompletion: { result in

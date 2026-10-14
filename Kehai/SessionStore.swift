@@ -38,6 +38,29 @@ struct ShareSettings: Codable, Equatable {
     }
 }
 
+/// トントン (あいさつ) の履歴の1件。
+struct RecentTap: Decodable, Identifiable {
+    let id: Int
+    let partnerId: UUID
+    /// 自分が送ったものなら true。
+    let isMine: Bool
+    let kind: String
+    let createdAt: Date
+    /// 受け取った側がアプリで見た時刻。
+    let seenAt: Date?
+
+    var tapKind: TapKind { TapKind(rawValue: kind) ?? .tonton }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partnerId = "partner_id"
+        case isMine = "is_mine"
+        case kind
+        case createdAt = "created_at"
+        case seenAt = "seen_at"
+    }
+}
+
 /// 自分の状態のうち、画面で変えられるもの。
 private struct MyStateRow: Decodable {
     let isWorking: Bool
@@ -67,17 +90,54 @@ final class SessionStore {
     var sleepStartMinutes = 23 * 60
     var sleepEndMinutes = 7 * 60
     var shareSettings: [UUID: ShareSettings] = [:]
+    var recentTaps: [RecentTap] = []
+    /// 招待リンクから開いたときのコード。ログイン後に「つながりますか？」と聞く。
+    var pendingInviteCode: String?
+    /// 初めての人に、使い方を順に案内する。
+    var needsOnboarding = false
 
+    /// 自分に届いて、まだ見ていないあいさつの数。
+    var unseenTapCount: Int {
+        recentTaps.filter { !$0.isMine && $0.seenAt == nil }.count
+    }
+
+    private static let onboardedKey = "onboarded"
     private var currentNonce: String?
 
     func start() async {
         isSignedIn = (try? await client.auth.session) != nil
+        if isSignedIn {
+            await loadProfile()
+            decideOnboarding()
+        }
         isLoading = false
         if isSignedIn {
             await syncMyState()
             await refreshPartners()
+            await loadRecentTaps()
             await PushRegistrar.uploadStored()
         }
+    }
+
+    // MARK: 初回の案内
+
+    /// 名前をもう決めている人 (このバージョンより前から使っている人) には、案内を出さない。
+    private func decideOnboarding() {
+        let defaults = UserDefaults.standard
+        if !(profile?.displayName.isEmpty ?? true) {
+            defaults.set(true, forKey: Self.onboardedKey)
+        }
+        needsOnboarding = !defaults.bool(forKey: Self.onboardedKey)
+    }
+
+    func finishOnboarding() {
+        UserDefaults.standard.set(true, forKey: Self.onboardedKey)
+        needsOnboarding = false
+    }
+
+    /// 設定画面の「使い方をもう一度見る」。
+    func replayOnboarding() {
+        needsOnboarding = true
     }
 
     // MARK: Sign in with Apple
@@ -104,8 +164,11 @@ final class SessionStore {
             try await client.auth.signInWithIdToken(
                 credentials: OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce)
             )
+            await loadProfile()
+            decideOnboarding()
             isSignedIn = true
             await refreshPartners()
+            await loadRecentTaps()
             await PushRegistrar.uploadStored()
         } catch {
             message = "ログインに失敗しました: \(error.localizedDescription)"
@@ -120,6 +183,8 @@ final class SessionStore {
         profile = nil
         inviteCode = nil
         shareSettings = [:]
+        recentTaps = []
+        needsOnboarding = false
         PartnerCache.clear()
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -158,14 +223,54 @@ final class SessionStore {
         }
     }
 
-    func redeem(code: String) async {
+    /// つながれたら true。
+    @discardableResult
+    func redeem(code: String) async -> Bool {
         do {
             try await client.rpc("redeem_invite", params: ["p_code": code]).execute()
             message = "つながりました"
             await refreshPartners()
+            return true
         } catch {
             message = Self.describe(error)
+            return false
         }
+    }
+
+    /// 招待リンク (kehai://join?code=KEHAI-XXXXXX) を受け取る。
+    func handle(url: URL) {
+        guard let code = InviteLink.code(from: url) else { return }
+        pendingInviteCode = code
+    }
+
+    // MARK: トントン (あいさつ)
+
+    /// 送れたら true。3秒以内の連打などは、黙って失敗させる。
+    @discardableResult
+    func sendTap(to partner: PartnerState, kind: TapKind) async -> Bool {
+        let sent = await TapSender.send(to: partner.partnerId.uuidString, kind: kind)
+        if sent {
+            WidgetCenter.shared.reloadAllTimelines()
+            await loadRecentTaps()
+        }
+        return sent
+    }
+
+    func loadRecentTaps() async {
+        do {
+            recentTaps = try await client.rpc("get_recent_taps").execute().value
+        } catch {
+            // 履歴は補助的な表示なので、取れなくても知らせない。
+        }
+    }
+
+    /// 履歴を開いたときに呼ぶ。送った側に「見た」と出る。
+    func markTapsSeen() async {
+        guard unseenTapCount > 0 else { return }
+        do {
+            try await client.rpc("mark_taps_seen").execute()
+            await loadRecentTaps()
+        } catch {}
     }
 
     func remove(_ partner: PartnerState) async {
@@ -328,7 +433,7 @@ final class SessionStore {
         }
     }
 
-    func updateDisplayName(_ name: String) async {
+    func updateDisplayName(_ name: String, announce: Bool = true) async {
         guard let id = client.auth.currentUser?.id else { return }
         do {
             try await client.from("profiles")
@@ -336,7 +441,7 @@ final class SessionStore {
                 .eq("id", value: id)
                 .execute()
             profile?.displayName = name
-            message = "名前を保存しました"
+            if announce { message = "名前を保存しました" }
         } catch {
             message = "保存できませんでした: \(error.localizedDescription)"
         }

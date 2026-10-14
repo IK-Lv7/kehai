@@ -1,160 +1,39 @@
 import SwiftUI
 
+/// ホーム。なかまのキャラを大きく並べる。タップでトントン、長押しでほかのあいさつ・設定。
+/// 自分のキャラや通知などの設定は、右上の歯車から。
 struct HomeView: View {
     @Environment(SessionStore.self) private var store
-    @State private var displayName = ""
-    @State private var code = ""
-    @State private var style = "maru"
-    @State private var creature = "cat"
-    @State private var color = CharacterPalette.colors[0].hex
+    @State private var showingInvite = false
+    @State private var showingHistory = false
     @State private var partnerToRemove: PartnerState?
-    @State private var confirmingDelete = false
-    @State private var sleepStart = Date()
-    @State private var sleepEnd = Date()
+    @State private var sharePartnerId: UUID?
+    /// 送った (届いた) 直後だけ、手を振る絵にする。
+    @State private var tappingIds: Set<UUID> = []
+    @State private var hapticCount = 0
+
+    private let columns = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
     var body: some View {
         NavigationStack {
-            List {
-                Section("なかま") {
-                    if store.partners.isEmpty {
-                        Text("まだ誰ともつながっていません").foregroundStyle(.secondary)
-                    }
-                    ForEach(store.partners) { partner in
-                        HStack(spacing: 12) {
-                            CharacterView(
-                                style: partner.characterStyle,
-                                creature: partner.creature,
-                                color: partner.color,
-                                state: partner.characterState(now: Date())
-                            )
-                            .frame(width: 40, height: 40)
-                            .accessibilityLabel(partner.presence(now: Date()).label)
-                            Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
-                            Spacer()
-                            Button("解除", role: .destructive) {
-                                partnerToRemove = partner
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                }
-
-                Section("自分のキャラ") {
-                    HStack {
-                        Spacer()
-                        CharacterView(style: style, creature: creature, color: color)
-                            .frame(width: 96, height: 96)
-                        Spacer()
-                    }
-                    characterGrid
-                    HStack(spacing: 16) {
-                        ForEach(CharacterPalette.colors, id: \.hex) { item in
-                            Button {
-                                color = item.hex
-                            } label: {
-                                Circle()
-                                    .fill(Color(hex: item.hex))
-                                    .frame(width: 36, height: 36)
-                                    .overlay(
-                                        Circle().stroke(Color.primary, lineWidth: color == item.hex ? 3 : 0)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(item.name)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-
-                Section {
-                    Toggle("さぎょうちゅう", isOn: Binding(
-                        get: { store.isWorking },
-                        set: { newValue in Task { await store.setWorking(newValue) } }
-                    ))
-                    DatePicker("ねる時間", selection: $sleepStart, displayedComponents: .hourAndMinute)
-                    DatePicker("おきる時間", selection: $sleepEnd, displayedComponents: .hourAndMinute)
-                } header: {
-                    Text("自分の状態")
-                } footer: {
-                    Text("ねる時間のあいだ、充電しているか、しばらくアプリが動いていないと、相手には「ねてる」と見えます。コントロールセンターにも「さぎょうちゅう」のボタンを置けます。")
-                }
-
-                if !store.partners.isEmpty {
-                    Section {
-                        ForEach(store.partners) { partner in
-                            NavigationLink {
-                                PartnerShareView(partner: partner)
-                            } label: {
-                                Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
-                            }
-                        }
-                    } header: {
-                        Text("見せる情報")
-                    } footer: {
-                        Text("相手ごとに、自分の何を見せるかを選べます。")
-                    }
-                }
-
-                Section {
-                    Toggle("トントンの通知を受け取る", isOn: Binding(
-                        get: { store.profile?.receiveTaps ?? true },
-                        set: { newValue in Task { await store.setReceiveTaps(newValue) } }
-                    ))
-                } header: {
-                    Text("通知")
-                } footer: {
-                    Text("届かないときは、iOSの設定でKehaiの通知を許可してください。")
-                }
-
-                Section("自分のなまえ") {
-                    TextField("相手に見えるなまえ", text: $displayName)
-                    Button("保存") { Task { await store.updateDisplayName(displayName) } }
-                        .disabled(displayName.isEmpty)
-                }
-
-                Section("つながる") {
-                    Button("招待コードを作る") { Task { await store.createInvite() } }
-                    if let invite = store.inviteCode {
-                        Text(invite).font(.title3.monospaced()).textSelection(.enabled)
-                        Text("3日で期限切れ・1回だけ使えます").font(.caption).foregroundStyle(.secondary)
-                    }
-                    TextField("もらったコード (KEHAI-XXXXXX)", text: $code)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                    Button("コードでつながる") {
-                        Task {
-                            await store.redeem(code: code)
-                            code = ""
-                        }
-                    }
-                    .disabled(code.isEmpty)
-                }
-
-                Section {
-                    Link("プライバシーポリシー", destination: SharedLinks.privacyPolicy)
-                    Link("サポート", destination: SharedLinks.support)
-                }
-
-                Section {
-                    Button("ログアウト", role: .destructive) { Task { await store.signOut() } }
-                    Button("アカウントを削除", role: .destructive) { confirmingDelete = true }
-                } footer: {
-                    Text("アカウントを削除すると、なまえ・キャラ・つながり・トントンの記録がすべて消えます。")
+            ScrollView {
+                if store.partners.isEmpty {
+                    emptyState
+                } else {
+                    partnerGrid
                 }
             }
             .navigationTitle("Kehai")
-            .refreshable { await store.refreshPartners() }
-            .task {
-                await store.loadMyState()
-                sleepStart = Self.date(fromMinutes: store.sleepStartMinutes)
-                sleepEnd = Self.date(fromMinutes: store.sleepEndMinutes)
-                await store.loadShareSettings()
-                await store.loadProfile()
-                if let profile = store.profile {
-                    displayName = profile.displayName
-                    style = profile.characterStyle
-                    creature = profile.creature
-                    color = profile.color
+            .refreshable {
+                await store.refreshPartners()
+                await store.loadRecentTaps()
+            }
+            .toolbar { toolbar }
+            .sheet(isPresented: $showingInvite) { InviteView() }
+            .sheet(isPresented: $showingHistory) { TapHistoryView() }
+            .navigationDestination(item: $sharePartnerId) { id in
+                if let partner = store.partners.first(where: { $0.partnerId == id }) {
+                    PartnerShareView(partner: partner)
                 }
             }
             .confirmationDialog(
@@ -171,88 +50,201 @@ struct HomeView: View {
                 }
                 Button("キャンセル", role: .cancel) {}
             } message: { _ in
-                Text("もう一度つながるには、新しい招待コードが必要です。")
+                Text("もう一度つながるには、新しい招待リンクが必要です。")
             }
-            .confirmationDialog(
-                "アカウントを削除しますか？",
-                isPresented: $confirmingDelete,
-                titleVisibility: .visible
-            ) {
-                Button("削除する", role: .destructive) {
-                    Task { await store.deleteAccount() }
+            .sensoryFeedback(.impact(weight: .light), trigger: hapticCount)
+            .onReceive(NotificationCenter.default.publisher(for: .tapReceived)) { note in
+                if let senderId = (note.object as? String).flatMap(UUID.init(uuidString:)) {
+                    bounce(senderId)
                 }
-                Button("キャンセル", role: .cancel) {}
-            } message: {
-                Text("この操作は取り消せません。つながっていた人のウィジェットからも、あなたは消えます。")
+                Task {
+                    await store.loadRecentTaps()
+                    await store.refreshPartners()
+                }
             }
-            .onChange(of: sleepStart) { saveSleepWindow() }
-            .onChange(of: sleepEnd) { saveSleepWindow() }
-            .onChange(of: style) { saveAppearance() }
-            .onChange(of: creature) { saveAppearance() }
-            .onChange(of: color) { saveAppearance() }
         }
     }
 
-    /// キャラ一覧。色ごとには並べず、代表色の1体だけを表示し、色は下のパレットで選ぶ。
-    private var characterGrid: some View {
-        let representative = CharacterPalette.colors[0].hex
-        let items: [(key: String, name: String, style: String, creature: String)] =
-            [("maru", "まる", "maru", creature)]
-            + Creature.all.map { ($0.id, $0.name, "dot", $0.id) }
-        let selectedKey = style == "dot" ? creature : "maru"
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
-            ForEach(items, id: \.key) { item in
-                Button {
-                    style = item.style
-                    creature = item.creature
-                } label: {
-                    VStack(spacing: 6) {
-                        CharacterView(style: item.style, creature: item.creature, color: representative)
-                            .frame(width: 56, height: 56)
-                        Text(item.name).font(.caption)
+    // MARK: なかま
+
+    private var partnerGrid: some View {
+        VStack(spacing: 16) {
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(store.partners) { partner in
+                    Button {
+                        send(.tonton, to: partner)
+                    } label: {
+                        PartnerTile(partner: partner, isTapping: tappingIds.contains(partner.partnerId))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.accentColor, lineWidth: selectedKey == item.key ? 3 : 0)
-                    )
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .contextMenu { menu(for: partner) }
+                    .accessibilityHint("タップでトントン。長押しで、ほかのあいさつ")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.name)
+                // つながれる上限 (4人) までは、招待の枠を出す。
+                if store.partners.count < 4 {
+                    Button {
+                        showingInvite = true
+                    } label: {
+                        InviteTile()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("なかまを招待")
+                }
+            }
+            Text("タップでトントン・長押しでほかのあいさつ")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+    }
+
+    @ViewBuilder
+    private func menu(for partner: PartnerState) -> some View {
+        ForEach(TapKind.allCases.filter { $0 != .tonton }) { kind in
+            Button {
+                send(kind, to: partner)
+            } label: {
+                Label(kind.title, systemImage: kind.symbol)
+            }
+        }
+        Divider()
+        Button {
+            sharePartnerId = partner.partnerId
+        } label: {
+            Label("見せる情報", systemImage: "eye")
+        }
+        Button(role: .destructive) {
+            partnerToRemove = partner
+        } label: {
+            Label("つながりを解除", systemImage: "person.badge.minus")
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            MaruView()
+                .frame(width: 140, height: 140)
+            Text("まだ誰ともつながっていません")
+                .font(.headline)
+            Text("大切な人を招待すると、ここにその人の気配が並びます。")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button {
+                showingInvite = true
+            } label: {
+                Label("なかまを招待する", systemImage: "person.badge.plus")
+                    .padding(.horizontal)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .padding(.top, 80)
+        .padding(.horizontal, 32)
+    }
+
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button {
+                showingHistory = true
+            } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .overlay(alignment: .topTrailing) {
+                        if store.unseenTapCount > 0 {
+                            Circle()
+                                .fill(.red)
+                                .frame(width: 9, height: 9)
+                                .offset(x: 4, y: -4)
+                        }
+                    }
+            }
+            .accessibilityLabel(store.unseenTapCount > 0 ? "トントンの履歴 (新着あり)" : "トントンの履歴")
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                showingInvite = true
+            } label: {
+                Image(systemName: "person.badge.plus")
+            }
+            .accessibilityLabel("なかまを招待")
+            NavigationLink {
+                SettingsView()
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .accessibilityLabel("設定")
+        }
+    }
+
+    // MARK: 送る
+
+    private func send(_ kind: TapKind, to partner: PartnerState) {
+        hapticCount += 1
+        Task {
+            if await store.sendTap(to: partner, kind: kind) {
+                bounce(partner.partnerId)
             }
         }
     }
 
-    private static func date(fromMinutes minutes: Int) -> Date {
-        Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: Date()) ?? Date()
-    }
-
-    private static func minutes(from date: Date) -> Int {
-        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
-    }
-
-    /// 読み込み直後の値の反映では、保存しない (今の値と同じときは何もしない)。
-    private func saveSleepWindow() {
-        let start = Self.minutes(from: sleepStart)
-        let end = Self.minutes(from: sleepEnd)
-        guard start != store.sleepStartMinutes || end != store.sleepEndMinutes else { return }
+    private func bounce(_ id: UUID) {
+        tappingIds.insert(id)
         Task {
-            await store.updateSleepWindow(startMinutes: start, endMinutes: end)
-            await store.refreshPartners()
+            try? await Task.sleep(for: .seconds(1.5))
+            tappingIds.remove(id)
         }
     }
+}
 
-    /// 読み込み直後の値の反映では、保存しない (今の値と同じときは何もしない)。
-    private func saveAppearance() {
-        guard let profile = store.profile,
-              profile.characterStyle != style || profile.creature != creature || profile.color != color
-        else { return }
-        Task {
-            await store.updateAppearance(style: style, creature: creature, color: color)
-            await store.refreshPartners()
+/// なかま1人の枠。キャラの絵だけで状態が分かるようにし、文字は名前だけ。
+private struct PartnerTile: View {
+    let partner: PartnerState
+    let isTapping: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            CharacterView(
+                style: partner.characterStyle,
+                creature: partner.creature,
+                color: partner.color,
+                state: isTapping ? .tap : partner.characterState(now: Date())
+            )
+            .frame(width: 112, height: 112)
+            .scaleEffect(isTapping ? 1.12 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.4), value: isTapping)
+            Text(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)
+                .font(.headline)
+                .lineLimit(1)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(RoundedRectangle(cornerRadius: 20).fill(.fill.tertiary))
+        .contentShape(RoundedRectangle(cornerRadius: 20))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(partner.displayName.isEmpty ? "なまえ未設定" : partner.displayName)、\(partner.presence(now: Date()).label)"
+        )
+    }
+}
+
+/// まだ空いている枠。押すと招待のシートを開く。
+private struct InviteTile: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "plus")
+                .font(.system(size: 36, weight: .semibold))
+                .frame(width: 112, height: 112)
+            Text("招待する")
+                .font(.headline)
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6]))
+                .foregroundStyle(.tertiary)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 20))
     }
 }
