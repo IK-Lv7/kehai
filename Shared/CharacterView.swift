@@ -38,6 +38,8 @@ enum CharacterPalette {
 enum Creature {
     static let all: [(id: String, name: String)] = [
         ("cat", "ねこ"), ("frog", "かえる"), ("robot", "ロボ"), ("chick", "ひよこ"),
+        ("dog", "いぬ"), ("rabbit", "うさぎ"), ("bear", "くま"), ("penguin", "ぺんぎん"),
+        ("fox", "きつね"), ("pig", "ぶた"), ("ghost", "おばけ"), ("slime", "スライム"),
     ]
 }
 
