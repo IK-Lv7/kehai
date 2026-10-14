@@ -23,7 +23,7 @@ struct CharacterEditor: View {
             [("maru", "まる", "maru", creature)]
             + Creature.all.map { ($0.id, $0.name, "dot", $0.id) }
         let selectedKey = style == "dot" ? creature : "maru"
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
+        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
             ForEach(items, id: \.key) { item in
                 Button {
                     style = item.style
@@ -31,7 +31,7 @@ struct CharacterEditor: View {
                 } label: {
                     VStack(spacing: 6) {
                         CharacterView(style: item.style, creature: item.creature, color: representative)
-                            .frame(width: 56, height: 56)
+                            .frame(width: 48, height: 48)
                         Text(item.name).font(.caption)
                     }
                     .frame(maxWidth: .infinity)
